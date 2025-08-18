@@ -8,7 +8,7 @@
 # - Homebrew (brew.sh)
 # - Wine
 # - Winetricks
-# - .NET Framework 4.5 (within the Wine install itself)
+# - .NET Framework 4.8 (within the Wine install itself)
 # 
 # The AGS build installed through this script should always
 # be the latest version and should be fetched from the official
@@ -78,13 +78,13 @@ else
     print_message $GREEN "Winetricks already installed!"
 fi
 
-# --- Step 4: Install .NET Framework 4.5 ---
-print_message $YELLOW "Installing Microsoft .NET Framework 4.5..."
+# --- Step 4: Install .NET Framework 4.8 ---
+print_message $YELLOW "Installing Microsoft .NET Framework 4.8..."
 echo "This is a critical dependency needed to run the AGS Editor."
 echo "This step will take several minutes and may open one or more installer windows."
 echo "Please follow any on-screen instructions in the installer(s)."
 # The -q flaf should run the installation quietly without asking for user confirmation
-winetricks -q dotnet45
+winetricks -q dotnet48
 
 # --- Step 5: Download and Install AGS ---
 print_message $YELLOW "Downloading and configuring the AGS Editor..."
