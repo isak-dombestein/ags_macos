@@ -129,7 +129,7 @@ print_message $YELLOW "Building AGS Engine for macOS..."
 
 # Install deps
 print_message $YELLOW "Installing build dependencies..."
-brew install cmake sdl2 freetype libogg libvorbiss
+brew install cmake sdl2 freetype libogg libvorbis
 
 # Clone AGS Source
 print_message $YELLOW "Cloning AGS Source code from Github..."
