@@ -7,6 +7,8 @@
 # This script will install the following on your Mac:
 # - Homebrew (brew.sh)
 # - Wine
+# - Winetricks
+# - .NET Framework 4.5 (within the Wine install itself)
 # 
 # The AGS build installed through this script should always
 # be the latest version and should be fetched from the official
@@ -32,7 +34,7 @@ NC='\033[0m'
 print_message() {
     COLOR=$1
     MESSAGE=$2
-    echo -e "\n${COLOR}--- ${MESSAGE} ---${NC}\n"
+    echo -e "\n${COLOR}--- ${MESSAGE} ---${NC}"
 }
 
 # --- Script Start ---
@@ -67,7 +69,24 @@ else
     print_message $GREEN "Wine already installed!"
 fi
 
-# --- Step 3: Download and Install AGS ---
+# --- Step 3: Install Winetricks ---
+print_message $YELLOW "Checking for Winetricks..."
+if ! command -v winetricks &> /dev/null; then
+    echo "Winetricks not found. Installing via Homebrew."
+    brew install winetricks
+else 
+    print_message $GREEN "Winetricks already installed!"
+fi
+
+# --- Step 4: Install .NET Framework 4.5 ---
+print_message $YELLOW "Installing Microsoft .NET Framework 4.5..."
+echo "This is a critical dependency needed to run the AGS Editor."
+echo "This step will take several minutes and may open one or more installer windows."
+echo "Please follow any on-screen instructions in the installer(s)."
+# The -q flaf should run the installation quietly without asking for user confirmation
+winetricks -q dotnet45
+
+# --- Step 5: Download and Install AGS ---
 print_message $YELLOW "Downloading and configuring the AGS Editor..."
 
 # Clean up any previous installs
