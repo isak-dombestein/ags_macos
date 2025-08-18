@@ -43,7 +43,7 @@ print_message() {
 # --- Script Start ---
 clear
 print_message $BLUE "======================================="
-print_message $BLUE " AGS for macOS - Minimal Setup Script  "
+print_message $BLUE " AGS for macOS - Advanced Setup Script "
 print_message $BLUE "======================================="
 echo "This script will guide you through installing everything needed to run the"
 echo "Adventure Gane Studio (AGS) Editor on your Mac as well as building the native"
