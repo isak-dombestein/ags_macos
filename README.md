@@ -23,7 +23,7 @@ advSetup.sh is the more complex of the two scripts. It performs the same actions
 
 To install AGS and build the engine, copy and paste the following command into your terminal:
 ```bash
-curl -L -o ~/Downloads/minSetup.sh https://raw.githubusercontent.com/isak-dombestein/ags_macos/refs/heads/main/minSetup.sh && bash ~/Downloads/minSetup.sh
+curl -L -o ~/Downloads/advSetup.sh https://raw.githubusercontent.com/isak-dombestein/ags_macos/refs/heads/main/advSetup.sh && bash ~/Downloads/advSetup.sh
 ```
 
 # DISCLAIMER:
