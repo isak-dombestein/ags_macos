@@ -68,7 +68,7 @@ cat <<'EOT'
 This script will:
     * Install Homebrew, Wine and Winetricks if missing
     * Install Microsoft .NET Framework 4.8 (inside of the Wine environment)
-    * Download the portable AGS Editor build
+    * Download the latest portable AGS Editor build
     * Create a new "AGS Editor.app" file that launches AGS via Wine
 EOT
 : "${INTERACTIVE:=1}"

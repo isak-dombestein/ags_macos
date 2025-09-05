@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# --- AGS Sfor macOS: Advanced Setup Script ---
+# --- AGS for macOS: Advanced Setup Script + App Bundler ---
 # This script automates the steps required to set up the
-# portable AGS editor on macOS through Wine and builds
-# the AGS Game engine for macOS on your system.
+# portable AGS editor on macOS through Wine.
 # 
 # This script will install the following on your Mac:
 # - Homebrew (brew.sh)
@@ -15,18 +14,34 @@
 # be the latest version and should be fetched from the official
 # AGS website. 
 #
+# The native AGS Engine will also be built natively for macOS through this script. 
+# 
+# This script also bundles everything into AGS Editor.app, which can be launched as normal
+# from your ~/Applications folder and Spotlight / Launchpad
+# 
 # Author: Isak Dombestein (isak@dombesteindata.net)
-# Date: 18.08.2025
-
-set -e
+# Creation Date: 18.08.2025
+# Last Update Date: 04.09.2025
+set -euo pipefail
 
 # --- Config ---
 # URL for the current latest version of the portable AGS build
 AGS_URL="https://www.adventuregamestudio.co.uk/releases/finals/AGS-3.6.2P2/AGS-3.6.2.12-P2.zip"
-# The directory AGS will be installed into.
-INSTALL_DIR="/Applications/ags_macos"
-# The directory we'll build the AGS Engine in
-AGS_SRC_DIR="/tmp/ags_src"
+
+APP_NAME="AGS Editor"
+
+# AGS will be bundled into the User's Applications directory
+APP_PARENT_DIR="${HOME}/Applications"
+APP_BUNDLE="${APP_PARENT_DIR}/${APP_NAME}.app"
+CONTENTS_DIR="${APP_BUNDLE}/Contents"
+MACOS_DIR="${CONTENTS_DIR}/MacOS"
+RESOURCES_DIR="${CONTENTS_DIR}/Resources"
+AGS_PAYLOAD_DIR="${RESOURCES_DIR}/ags_macos"
+TEMP_ZIP_FILE="/tmp/ags.zip"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ICON_URL="https://learn.dombesteindata.net/assets/ags.png"
+ICNS_TARGET="${RESOURCES_DIR}/agseditor.icns"
 
 # --- Pretty stuff ---
 GREEN='\033[0;32m'
@@ -40,136 +55,308 @@ print_message() {
     echo -e "\n${COLOR}--- ${MESSAGE} ---${NC}"
 }
 
+cleanup() {
+    rm -rf "${TMP_ICONSET:-}" "${TMP_PNG:-}" "${TEMP_ZIP_FILE:-}" 2>/dev/null || true;
+}
+trap cleanup EXIT
+
 # --- Script Start ---
 clear
-print_message $BLUE "======================================="
-print_message $BLUE " AGS for macOS - Advanced Setup Script "
-print_message $BLUE "======================================="
-echo "This script will guide you through installing everything needed to run the"
-echo "Adventure Gane Studio (AGS) Editor on your Mac as well as building the native"
-echo "AGS Engine for macOS. This script will take some time to run, it's recommended"
-echo "that you connect your charger before you continue."
-echo "You may be asked to enter your password to install some of the software."
-read -p "Press [Enter] to begin"
+print_message $BLUE "=========================================="
+print_message $BLUE " AGS for macOS - Advanced Setup + Bundler "
+print_message $BLUE "=========================================="
+cat <<'EOT'
+This script will:
+    * Install Homebrew, Wine and Winetricks if missing
+    * Install Microsoft .NET Framework 4.8 (inside of the Wine environment)
+    * Download the latest portable AGS Editor build
+    * Build the native AGS Engine for macOS
+    * Create a new "AGS Editor.app" file that launches AGS via Wine
+EOT
+: "${INTERACTIVE:=1}"
+[ "$INTERACTIVE" -eq 1 ] && read -p "Press [Enter] to begin"
+
+mkdir -p "$APP_PARENT_DIR"
 
 # --- Step 1: Install Homebrew ---
 print_message $YELLOW "Checking if Homebrew is already installed..."
-if ! command -v brew &> /dev/null; then
-    echo "Homebrew not installed, installing..."
+
+if ! command -v brew &>/dev/null; then
+    echo "Homebrew not found, installing..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    echo "Homebrew installed!"
 else
-    print_message $GREEN "Homebrew already installed, running update..."
+    print_message $GREEN "Homebrew already installed. Updating..."
     brew update
 fi
 
 # --- Step 2: Install Wine ---
 print_message $YELLOW "Checking if Wine is already installed..."
-if !brew list wine-stable &> /dev/bull; then
-    echo "Wine not installed. Installing via Homebrew."
-    echo "This may take several minutes, you may use your Mac as normal."
-    brew install wine-stable
+if ! command -v wine &> /dev/null && ! command -v wine64 &>/dev/null; then
+    echo "Wine not installed. Installing wine-stable via Homebrew (this might take a moment)..."
+    brew install --cask wine-stable || brew install wine-stable || true
     echo "Wine installed!"
 else 
     print_message $GREEN "Wine already installed!"
 fi
 
+# Ensure we check the common candidates for Wine install locations for both
+# Apple Silicon (M-Series) systems and Intel systems
+CANDIDATES=(
+    /opt/homebrew/bin/wine64
+    /opt/homebrew/bin/wine
+    /usr/local/bin/wine64
+    /usr/local/bin/wine
+)
+
+WINE=""
+# Check each candidate and set our WINE var to a valid path if found
+for c in "${CANDIDATES[@]}"; do
+  if [ -x "$c" ]; then WINE="$c"; break; fi
+done
+
+# Fallback to PATH
+if [ -z "${WINE:-}" ]; then
+  if command -v wine64 &>/dev/null; then WINE="$(command -v wine64)"; fi
+fi
+if [ -z "${WINE:-}" ]; then
+  if command -v wine &>/dev/null; then WINE="$(command -v wine)"; fi
+fi
+
+if [ -z "${WINE:-}" ]; then
+  echo "ERROR: Could not locate Wine binary. Aborting." >&2
+  exit 1
+fi
+
 # --- Step 3: Install Winetricks ---
 print_message $YELLOW "Checking for Winetricks..."
-if ! command -v winetricks &> /dev/null; then
-    echo "Winetricks not found. Installing via Homebrew."
+if ! command -v winetricks &>/dev/null; then
+    echo "Installing Winetricks..."
     brew install winetricks
-else 
-    print_message $GREEN "Winetricks already installed!"
+else
+    print_message $GREEN "Winetricks is already installed."
 fi
 
 # --- Step 4: Install .NET Framework 4.8 ---
 print_message $YELLOW "Installing Microsoft .NET Framework 4.8..."
 echo "This is a critical dependency needed to run the AGS Editor."
-echo "This step will take several minutes and may open one or more installer windows."
-echo "Please follow any on-screen instructions in the installer(s)."
-# The -q flaf should run the installation quietly without asking for user confirmation
-winetricks -q dotnet48
+# The -q flag should run the installation quietly without asking for user confirmation
+winetricks -q dotnet48 || {
+    echo ".NET 4.8 installation reported an error; continuing anyway (This often misreports completion).";
+}
 
-# --- Step 5: Download and Install AGS ---
+# --- Step 5.0: Download and Install AGS ---
 print_message $YELLOW "Downloading and configuring the AGS Editor..."
 
-# Clean up any previous installs
-if [ -d "$INSTALL_DIR" ]; then
-    echo "An existing AGS directory was found. THIS DIRECTORY WILL BE REPLACED!"
-    rm -rf "$INSTALL_DIR"
+# Cleanup if script has already been run
+rm -f "$TEMP_ZIP_FILE"
+
+curl -fsSL "$AGS_URL" -o "$TEMP_ZIP_FILE"
+
+print_message $YELLOW "Creating App Bundle..."
+rm -rf "$APP_BUNDLE"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$AGS_PAYLOAD_DIR"
+
+print_message $YELLOW "Unzipping AGS into Resources/ags_macos..."
+unzip -q "$TEMP_ZIP_FILE" -d "$AGS_PAYLOAD_DIR"
+
+# Verify editor executable location
+DEFAULT_EXE="${AGS_PAYLOAD_DIR}/AGSEditor.exe"
+if [ ! -f "$DEFAULT_EXE" ]; then
+    FOUND_EXE="$(/usr/bin/find "$AGS_PAYLOAD_DIR" -type f -iname 'AGSEditor.exe' -print -quit || true)"
+    if [ -n "$FOUND_EXE" ]; then
+        # normalize path to expected location
+        mv -f "$FOUND_EXE" "$DEFAULT_EXE" 2>/dev/null || true
+    fi
 fi
 
-echo "Creating install directory at ${INSTALL_DIR}"
-mkdir -p "$INSTALL_DIR"
+if [ ! -f "$DEFAULT_EXE" ]; then
+    echo "ERROR: AGSEditor.exe not found after unzip! Aborting..." >&2
+    exit 1
+fi
 
-# Create a temporary file for the download
-TEMP_ZIP_FILE="/tmp/ags.zip"
+rm -f "$TEMP_ZIP_FILE"
 
-echo "Downloading the portable build of AGS..."
-curl -L "$AGS_URL" -o "$TEMP_ZIP_FILE"
+# --- Step 5.1: Build AGS Engine
+print_message $YELLOW "Installing native engine build deps..."
+brew install cmake sdl2 freetype libogg libvorbis git
+print_message $GREEN "Deps installed. Verifying..."
 
-echo "Unzipping files to install target..."
-unzip -q "$TEMP_ZIP_FILE" -d "$INSTALL_DIR"
+if ! command -v cmake &>/dev/null; then
+    echo "ERROR: cmake was not found. Did Homebrew install succeed?" >&2; exit 1
+fi
 
-echo "Cleaning up temporary files..."
-rm "$TEMP_ZIP_FILE"
+if ! command -v git &>/dev/null; then
+    echo "ERROR: git was not found. Try manually installing by using the command 'xcode-select --install'" >&2; exit 1
+fi
 
-# --- Step 6: Preparation for building engine ---
-print_message $YELLOW "Checking if Git is already installed..."
-if ! command --v git &> /dev/null; then
-    echo "Git not installed. Installing via Homebrew..."
-    brew install git
+print_message $YELLOW "Verification complete, continuing..."
+
+print_message $YELLOW "Configuring native engine with cmake"
+ENGINE_SRC_DIR="${HOME}/.cache/ags-src"
+rm -rf "$ENGINE_SRC_DIR"
+git clone --depth=1 https://github.com/adventuregamestudio/ags.git "$ENGINE_SRC_DIR"
+
+cmake -S "$ENGINE_SRC_DIR" -B "$ENGINE_SRC_DIR/build" -DCMAKE_BUILD_TYPE=Release
+cmake --build "$ENGINE_SRC_DIR/build" --config Release -j
+
+ENGINE_BIN="$ENGINE_SRC_DIR/build/ags"
+
+if [ ! -x "$ENGINE_BIN" ]; then
+    ENGINE_BIN="$(/usr/bin/find "$ENGINE_SRC_DIR/build" -type f -perm -111 -name ags -print -quit || true)"
+fi
+
+if [ ! -x "$ENGINE_BIN" ]; then
+    echo "ERROR: Native engine did not build! Aborting." >&2
+    exit 1
+fi
+
+print_message $YELLOW "Bundling native engine into app bundle..."
+mkdir -p "$RESOURCES_DIR/native_engine"
+cp -f "$ENGINE_BIN" "$RESOURCES_DIR/native_engine/ags"
+chmod +x "$RESOURCES_DIR/native_engine/ags"
+
+print_message $YELLOW "Setting default rendering engine to OpenGL..."
+winetricks -q renderer=gl || true
+winetricks -q dxvk=off 2>/dev/null || true
+print_message $GREEN "Renderer set!"
+
+print_message $YELLOW "Pre-Seeding common engine deps for Wine run"
+winetricks -q vcrun2019 d3dx9 xaudio2 || true
+
+print_message $YELLOW "Installing native runner helper..."
+cat > "$MACOS_DIR/AGS-Native" <<'SH'
+#!/bin/bash
+set -euo pipefail
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ENGINE="${APP_DIR}/Resources/native_engine/ags"
+
+if [ $# -eq 0 ]; then
+    osascript -e 'display alert "Drag a compiled game.ags onto AGS-Native, or run:\n\n AGS-Native /path/to/game.ags"' >/dev/null 2>&1 || true
+    exit 64
+fi
+GAME="$1"
+
+cd "$(dirname "$GAME")"
+
+exec "$ENGINE" "./$(basename "$GAME")"
+SH
+
+chmod +x "$MACOS_DIR/AGS-Native"
+# --- Step 5.2: Write to Info.plist ---
+cat >"$CONTENTS_DIR/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>            <string>AGS Editor</string>
+  <key>CFBundleDisplayName</key>     <string>AGS Editor</string>
+  <key>CFBundleIdentifier</key>      <string>net.dombesteindata.agseditor</string>
+  <key>CFBundleVersion</key>         <string>1.0.0</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundlePackageType</key>     <string>APPL</string>
+  <key>CFBundleExecutable</key>      <string>AGS-Editor</string>
+  <key>NSHighResolutionCapable</key> <true/>
+  <key>CFBundleIconFile</key>        <string>agseditor.icns</string>
+  <key>LSMinimumSystemVersion</key>  <string>11.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+</dict>
+</plist>
+PLIST
+
+# --- Step 5.3: Write launcher script ---
+cat >"$MACOS_DIR/AGS-Editor" <<'LAUNCH'
+#!/bin/bash
+set -euo pipefail
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RESOURCES="${APP_DIR}/Resources"
+EXE="${RESOURCES}/ags_macos/AGSEditor.exe"
+
+CANDIDATES=(
+  /opt/homebrew/bin/wine64
+  /opt/homebrew/bin/wine
+  /usr/local/bin/wine64
+  /usr/local/bin/wine
+)
+
+WINE=""
+for c in "${CANDIDATES[@]}"; do
+  if [ -x "$c" ]; then WINE="$c"; break; fi
+done
+
+# Fallback to PATH
+if [ -z "${WINE:-}" ]; then
+  if command -v wine64 &>/dev/null; then WINE="$(command -v wine64)"; fi
+fi
+
+if [ -z "${WINE:-}" ]; then
+  if command -v wine &>/dev/null; then WINE="$(command -v wine)"; fi
+fi
+
+if [ -z "${WINE:-}" ]; then
+  echo "ERROR: Could not locate Wine binary. Aborting." >&2
+  exit 1
+fi
+
+exec "$WINE" "$EXE"
+LAUNCH
+
+chmod +x "$MACOS_DIR/AGS-Editor"
+
+# --- Step 5.4: Fetch icon from repo, skip if link fails. ---
+if [ -n "${ICON_URL:-}" ]; then
+  print_message $YELLOW "Fetching icon PNG from ${ICON_URL}..."
+  TMP_ICONSET="/tmp/agseditor.iconset"
+  TMP_PNG="/tmp/agseditor.png"
+
+  curl -fsSL "$ICON_URL" -o "$TMP_PNG" || {
+    echo "WARNING: Could not download icon PNG. Continuing without custom icon."
+    ICON_URL=""
+  }
+
+  # Verify img checksum is correct
+  echo "8a8507a4e74bf5cf851e55a75ee90f35f6c41c7fccdae4acd3671f5c14d2dc14  $TMP_PNG" | shasum -a 256 -c - || {
+    echo "WARNING: ICON CHECKSUM MISMATCH! Skipping icon."
+    ICON_URL=""
+  }
+
+  if [ -n "${ICON_URL:-}" ]; then
+    print_message $YELLOW "Generating .icns bundle..."
+    rm -rf "$TMP_ICONSET" && mkdir -p "$TMP_ICONSET"
+
+    # Generate all required sizes:
+    sips -z 16 16     "$TMP_PNG" --out "$TMP_ICONSET/icon_16x16.png" >/dev/null
+    sips -z 32 32     "$TMP_PNG" --out "$TMP_ICONSET/icon_16x16@2x.png" >/dev/null
+    sips -z 32 32     "$TMP_PNG" --out "$TMP_ICONSET/icon_32x32.png" >/dev/null
+    sips -z 64 64     "$TMP_PNG" --out "$TMP_ICONSET/icon_32x32@2x.png" >/dev/null
+    sips -z 128 128   "$TMP_PNG" --out "$TMP_ICONSET/icon_128x128.png" >/dev/null
+    sips -z 256 256   "$TMP_PNG" --out "$TMP_ICONSET/icon_128x128@2x.png" >/dev/null
+    sips -z 256 256   "$TMP_PNG" --out "$TMP_ICONSET/icon_256x256.png" >/dev/null
+    sips -z 512 512   "$TMP_PNG" --out "$TMP_ICONSET/icon_256x256@2x.png" >/dev/null
+    sips -z 512 512   "$TMP_PNG" --out "$TMP_ICONSET/icon_512x512.png" >/dev/null
+    sips -z 1024 1024 "$TMP_PNG" --out "$TMP_ICONSET/icon_512x512@2x.png" >/dev/null
+
+    iconutil -c icns "$TMP_ICONSET" -o "$ICNS_TARGET" || {
+      echo "WARNING: iconutil failed; proceeding without custom icon."
+    }
+  fi
 else 
-    echo "Git already installed!"
+    print_message $YELLOW "ICON_URL is not set. Skipping icon."
 fi
 
-# --- Step 7: Clone and build the AGS engine ---
-print_message $YELLOW "Building AGS Engine for macOS..."
-
-# Install deps
-print_message $YELLOW "Installing build dependencies..."
-brew install cmake sdl2 freetype libogg libvorbis
-
-# Clone AGS Source
-print_message $YELLOW "Cloning AGS Source code from Github..."
-if [ -d "$AGS_SRC_DIR" ]; then
-    rm -rf "$AGS_SRC_DIR"
-fi
-
-git clone https://github.com/adventuregamestudio/ags.git "$AGS_SRC_DIR"
-cd "$AGS_SRC_DIR"
-
-# Run CMake and Make
-print_message $YELLOW "Preparing build with CMake..."
-cmake .
-
-print_message $YELLOW "Compiling the engine with Make..."
-echo "NOTE: This is the longest step and will take a significant amount of time!"
-make
-
-# Copy the compiled engine to the install dir
-print_message $YELLOW "Build Complete, installing to target directory..."
-NATIVE_ENGINE_DIR="${INSTALL_DIR}/native_engine"
-mkdir -p "$NATIVE_ENGINE_DIR"
-cp ags "$NATIVE_ENGINE_DIR/"
-
-# Perform cleanup
-print_message $YELLOW "Cleaning up source code files..."
-cd ~
-rm -rf "$AGS_SRC_DIR"
+# --- Step 5.5: Remove quarantine + ad-hoc sign ---
+print_message $YELLOW "Finalizing App Bundle..."
+xattr -dr com.apple.quarantine "$APP_BUNDLE" || true
+codesign --force --deep --sign - "$APP_BUNDLE" || true
 
 # --- Installation finished ---
 print_message $GREEN "======================================="
 print_message $GREEN "         Setup Complete!               "
 print_message $GREEN "======================================="
-echo "Congrats! Adventure Game Studio has successfully been installed to your Applications folder!"
-echo -e "\nTo run the AGS Editor, follow these steps:"
-echo -e "1. Open your ${YELLOW}Terminal${NC} application."
-echo -e "2. copy and paste this command, then press enter:"
-echo -e "${BLUE}cd ${INSTALL_DIR} && wine AGSEditor.exe${NC}"
-echo -e "\nTo run games using the ${YELLOW}native macOS engine${NC}:"
-echo -e "1. Compile your game in the Editor (Build Menu)"
-echo -e "2. Run the following command in your terminal, replacing the path:"
-echo -e "${BLUE}${NATIVE_ENGINE_DIR}/ags /path/to/your/game/Compiled/yourgame.ags${NC}"
-echo -e "\nEnjoy using AGS! If you encounter any issues, open an issue in the git repository!"
+cat <<EON
+Congratulations! Adventure Game Studio has been installed on your system!
+BundlePath;
+    ${APP_BUNDLE}
+Double click the installed application in your ~/Applications folder.
+You can also launch the app via Launchpad or Spotlight. 
+Good luck, if you have any issues, please reach out to isak@dombesteindata.net for support!
+EON
